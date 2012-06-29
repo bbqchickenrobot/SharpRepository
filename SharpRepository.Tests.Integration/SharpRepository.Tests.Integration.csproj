@@ -116,6 +116,7 @@
     <Compile Include="Data\Db4oDataDirectoryFactory.cs" />
     <Compile Include="Data\EfDataDirectoryFactory.cs" />
     <Compile Include="Helpers\CurrentDirectory.cs" />
+    <Compile Include="Spikes\ODataTests.cs" />
     <Compile Include="Spikes\RavenDbEmbeddedTests.cs" />
     <Compile Include="TestAttributes\ExecuteForAllRepositoriesAttribute.cs" />
     <Compile Include="TestAttributes\ExecuteForRepositoriesAttribute.cs" />
@@ -152,6 +153,10 @@
     <ProjectReference Include="..\SharpRepository.InMemoryRepository\SharpRepository.InMemoryRepository.csproj">
       <Project>{13AD3FCA-4C9D-4674-B786-F30843638D3B}</Project>
       <Name>SharpRepository.InMemoryRepository</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\SharpRepository.ODataRepository\SharpRepository.ODataRepository.csproj">
+      <Project>{DC854C5A-CBBC-474A-9763-C871E4A4E41A}</Project>
+      <Name>SharpRepository.ODataRepository</Name>
     </ProjectReference>
     <ProjectReference Include="..\SharpRepository.RavenDbRepository\SharpRepository.RavenDbRepository.csproj">
       <Project>{0D7303B9-3A89-4932-B0F0-73B0C1C0FAED}</Project>

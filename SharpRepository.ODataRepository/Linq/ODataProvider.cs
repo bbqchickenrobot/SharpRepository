@@ -24,11 +24,11 @@ namespace SharpRepository.ODataRepository.Linq
         {
             var collectionName = expression.GetCollectionName();
 
-            var reuqestUrl = _url + '/' + collectionName;
+            var requestUrl = _url + '/' + collectionName;
 
-            reuqestUrl += Translate(expression);
+            requestUrl += Translate(expression);
 
-            var response = UrlHelper.Get(reuqestUrl);
+            var response = UrlHelper.Get(requestUrl);
 
             return DeserializeObject<TResult>(response);
         }

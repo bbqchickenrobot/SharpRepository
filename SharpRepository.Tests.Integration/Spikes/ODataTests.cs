@@ -49,7 +49,7 @@ namespace SharpRepository.Tests.Integration.Spikes
             // TODO: expand ODataProvider logic to handle OrderBy, OrderByDescending, First and FirstOrDefault
 
             var repository = new ODataRepository<Title, string>("http://odata.netflix.com/v2/Catalog/");
-            var list = repository.FindAll(x => x.ReleaseYear == 2007, new PagingOptions<Title, string>(1, 20, x => x.Name, true )).ToList();
+            var list = repository.FindAll(x => x.ReleaseYear == 2007, new PagingOptions<Title, string>(1, 20, x => x.Name, true)).ToList();
 
             list.Count.ShouldEqual(20);
         }

@@ -13,10 +13,10 @@ namespace SharpRepository.ODataRepository.Linq
             return url + "?" + param;
         }
 
-        public static string Get(string reuqestUrl)
+        public static string Get(string requestUrl)
         {
             //Console.WriteLine("requesting " + reuqestUrl);
-            var request = WebRequest.Create(reuqestUrl);
+            var request = WebRequest.Create(requestUrl);
             request.ContentType = "application/json";
             
             string responseFromServer;

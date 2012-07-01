@@ -53,5 +53,33 @@ namespace SharpRepository.Tests.Integration.Spikes
 
             list.Count.ShouldEqual(20);
         }
+
+        [Test]
+        public void FindAll_Netflix_Titles_With_String_Tests()
+        {
+            var repository = new ODataRepository<Title, string>("http://odata.netflix.com/v2/Catalog/");
+            var list = repository.FindAll(x => x.Name.Contains("Tab")).ToList();
+
+            list.Count.ShouldEqual(20);
+        }
+
+        [Test]
+        public void FindAll_Netflix_Titles_With_String_Length()
+        {
+            var repository = new ODataRepository<Title, string>("http://odata.netflix.com/v2/Catalog/");
+            var list = repository.FindAll(x => x.Name.Length == 100).ToList();
+
+            list.Count.ShouldEqual(20);
+        }
+
+        [Test]
+        public void FindAll_Netflix_Titles_With_String_ToUpper()
+        {
+            var repository = new ODataRepository<Title, string>("http://odata.netflix.com/v2/Catalog/");
+            var list = repository.FindAll(x => x.Name.ToUpper() == "TABLEAU").ToList();
+
+            list.Count.ShouldEqual(20);
+        }
+        
     }
 }

@@ -60,6 +60,9 @@ namespace SharpRepository.ODataRepository.Linq
                 case "GroupBy":
                 case "StartsWith":
                 case "Contains":
+                case "Length":
+                case "ToUpper":
+                case "ToLower":
                 case "Where":
                     SetWhereQuery(m);
                     break;
@@ -168,34 +171,51 @@ namespace SharpRepository.ODataRepository.Linq
         {
             var left = body.Left as MemberExpression;
             var right = body.Right;
+            var leftPart = left.Member.Name;
+
+            if (left.Expression.NodeType == ExpressionType.MemberAccess)
+            {
+                switch (leftPart)
+                {
+                    case "Length":
+                        leftPart = String.Format("length({0})", ((MemberExpression)left.Expression).Member.Name);
+                        break;
+                    case "ToUpper": // NodeType above is Call not MemberExpression
+                        leftPart = String.Format("toupper({0})", ((MemberExpression)left.Expression).Member.Name);
+                        break;
+                    case "ToLower":
+                        leftPart = String.Format("tolower({0})", ((MemberExpression)left.Expression).Member.Name);
+                        break;
+                }
+            }
 
             switch (body.NodeType)
             {
                 case ExpressionType.Equal:
-                    return string.Format("{0} eq {1}", left.Member.Name, GetValue(right));
+                    return string.Format("{0} eq {1}", leftPart, GetValue(right));
 
                 case ExpressionType.NotEqual:
-                    return string.Format("{0} ne {1}", left.Member.Name, GetValue(right));
+                    return string.Format("{0} ne {1}", leftPart, GetValue(right));
 
                 case ExpressionType.GreaterThan:
-                    return string.Format("{0} gt {1}", left.Member.Name, GetValue(right));
+                    return string.Format("{0} gt {1}", leftPart, GetValue(right));
 
                 case ExpressionType.GreaterThanOrEqual:
-                    return string.Format("{0} ge {1}", left.Member.Name, GetValue(right));
+                    return string.Format("{0} ge {1}", leftPart, GetValue(right));
 
                 case ExpressionType.LessThan:
-                    return string.Format("{0} lt {1}", left.Member.Name, GetValue(right));
+                    return string.Format("{0} lt {1}", leftPart, GetValue(right));
 
                 case ExpressionType.LessThanOrEqual:
-                    return string.Format("{0} le {1}", left.Member.Name, GetValue(right));
+                    return string.Format("{0} le {1}", leftPart, GetValue(right));
 
                 case ExpressionType.And:
                 case ExpressionType.AndAlso:
-                    return string.Format("{0} and {1}", left.Member.Name, GetValue(right));
+                    return string.Format("{0} and {1}", leftPart, GetValue(right));
 
                 case ExpressionType.Or:
                 case ExpressionType.OrElse:
-                    return string.Format("{0} or {1}", left.Member.Name, GetValue(right));
+                    return string.Format("{0} or {1}", leftPart, GetValue(right));
 
                 default:
                     throw new ArgumentOutOfRangeException();
@@ -212,10 +232,13 @@ namespace SharpRepository.ODataRepository.Linq
             switch (methodCall.Method.Name)
             {
                 case "StartsWith":
-                    return string.Format("{0}({1},'{2}')", "startswith", ((MemberExpression)methodCall.Object).Member.Name, GetValue(methodCall.Arguments[0]));
+                    return string.Format("startswith({0},'{1}') eq true", ((MemberExpression)methodCall.Object).Member.Name, GetValue(methodCall.Arguments[0]));
 
                 case "EndsWith":
-                    return string.Format("{0}({1},'{2}')", "endswith", ((MemberExpression)methodCall.Object).Member.Name, GetValue(methodCall.Arguments[0]));
+                    return string.Format("endswith({0},'{1}') eq true", ((MemberExpression)methodCall.Object).Member.Name, GetValue(methodCall.Arguments[0]));
+
+                case "Contains":
+                    return string.Format("substringof('{1}',{0}) eq true", ((MemberExpression)methodCall.Object).Member.Name, GetValue(methodCall.Arguments[0]));
 
                 default:
                     throw new ArgumentOutOfRangeException();

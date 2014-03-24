@@ -30,6 +30,12 @@
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
+  <PropertyGroup>
+    <SignAssembly>true</SignAssembly>
+  </PropertyGroup>
+  <PropertyGroup>
+    <AssemblyOriginatorKeyFile>exemplify.snk</AssemblyOriginatorKeyFile>
+  </PropertyGroup>
   <ItemGroup>
     <Reference Include="System" />
     <Reference Include="System.Configuration" />
@@ -164,6 +170,7 @@
     <Compile Include="Transactions\IBatchItem.cs" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="exemplify.snk" />
     <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup />

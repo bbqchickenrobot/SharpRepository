@@ -1,19 +1,46 @@
+using System;
+using System.Collections.Generic;
 using System.Linq;
+using System.Linq.Expressions;
+using System.Reflection;
 using MongoDB.Bson;
+using MongoDB.Bson.Serialization;
+using MongoDB.Bson.Serialization.Attributes;
+using MongoDB.Bson.Serialization.IdGenerators;
+using MongoDB.Bson.Serialization.Options;
 using MongoDB.Driver;
-using MongoDB.Driver.Builders;
 using MongoDB.Driver.Linq;
 using SharpRepository.Repository;
 using SharpRepository.Repository.Caching;
 using SharpRepository.Repository.FetchStrategies;
+using SharpRepository.Repository.Helpers;
+using SharpRepository.Repository.Specifications;
+using MongoDB.Bson.Serialization.Serializers;
 
 namespace SharpRepository.MongoDbRepository
 {
     public class MongoDbRepositoryBase<T, TKey> : LinqRepositoryBase<T, TKey> where T : class, new()
     {
         private readonly string _databaseName;
-        private MongoDatabase _database;
-        private MongoServer _server;
+        protected IMongoDatabase Database;
+
+        private readonly Dictionary<Type, BsonType> _keyTypeToBsonType = 
+            new Dictionary<Type, BsonType>
+            {
+                {typeof(string), BsonType.String},
+                {typeof(Guid), BsonType.ObjectId},
+                {typeof(ObjectId), BsonType.ObjectId},
+                {typeof(byte[]), BsonType.ObjectId}
+            };
+
+        private readonly Dictionary<Type, IIdGenerator> _keyTypeToBsonGenerator = 
+            new Dictionary<Type, IIdGenerator>
+            {
+                {typeof (string), new StringObjectIdGenerator() },
+                {typeof (Guid), new GuidGenerator()},
+                {typeof (ObjectId), new ObjectIdGenerator()},
+                {typeof(byte[]), new BsonBinaryDataGuidGenerator(GuidRepresentation.Standard)}
+            };
 
         internal MongoDbRepositoryBase(ICachingStrategy<T, TKey> cachingStrategy = null)
             : base(cachingStrategy)
@@ -25,13 +52,14 @@ namespace SharpRepository.MongoDbRepository
             : base(cachingStrategy)
         {
             _databaseName = MongoUrl.Create(connectionString).DatabaseName;
-            Initialize(MongoServer.Create(connectionString));
+            var cli = new MongoClient(connectionString);
+            Initialize(cli.GetDatabase(_databaseName));
         }
 
-        internal MongoDbRepositoryBase(MongoServer mongoServer, ICachingStrategy<T, TKey> cachingStrategy = null)
+        internal MongoDbRepositoryBase(IMongoDatabase mongoDatabase, ICachingStrategy<T, TKey> cachingStrategy = null)
             : base(cachingStrategy)
         {
-            Initialize(mongoServer);
+            Initialize(mongoDatabase);
         }
 
         private string DatabaseName
@@ -39,27 +67,239 @@ namespace SharpRepository.MongoDbRepository
             get { return string.IsNullOrEmpty(_databaseName) ? TypeName : _databaseName; }
         }
 
-        private void Initialize(MongoServer mongoServer = null)
+        private void Initialize(IMongoDatabase mongoDatabase = null)
         {
-            _server = mongoServer ?? MongoServer.Create("mongodb://localhost");
-            _database = _server.GetDatabase(DatabaseName);
+            Database = mongoDatabase ?? new MongoClient("mongodb://localhost/default").GetDatabase(MongoUrl.Create("mongodb://localhost/default").DatabaseName);
+
+            if (!BsonClassMap.IsClassMapRegistered(typeof (T)))
+            {
+                var primaryKeyPropInfo = GetPrimaryKeyPropertyInfo();
+                var primaryKeyName = primaryKeyPropInfo.Name;
+
+                BsonClassMap.RegisterClassMap<T>(cm =>
+                    {
+                        cm.AutoMap();
+                        if (cm.IdMemberMap == null)
+                        {
+                            cm.SetIdMember(cm.GetMemberMap(primaryKeyName));
+
+                            if (_keyTypeToBsonType.ContainsKey(typeof(TKey)) && (_keyTypeToBsonGenerator.ContainsKey(typeof(TKey))))
+                            {
+                                cm.IdMemberMap.SetSerializer(new StringSerializer(_keyTypeToBsonType[typeof(TKey)]));
+                                cm.IdMemberMap.SetIdGenerator(_keyTypeToBsonGenerator[typeof(TKey)]);
+                            }    
+                        }
+
+                        cm.Freeze();
+                    }
+                );
+            }
+        }
+
+        private IMongoCollection<T> BaseCollection()
+        {
+            return Database.GetCollection<T>(TypeName);
         }
 
         protected override IQueryable<T> BaseQuery(IFetchStrategy<T> fetchStrategy = null)
         {
-            return _database.GetCollection<T>(TypeName).AsQueryable();
+            return BaseCollection().AsQueryable();
         }
 
-        protected override T GetQuery(TKey key)
+        protected override T GetQuery(TKey key, IFetchStrategy<T> fetchStrategy)
         {
-            return IsValidKey(key)
-                       ? _database.GetCollection<T>(TypeName).FindOne(Query.EQ("_id", new ObjectId(key.ToString())))
-                       : default(T);
+            var keyBsonType = ((StringSerializer)BsonClassMap.LookupClassMap(typeof(T)).IdMemberMap.GetSerializer()).Representation;
+            var keyMemberName = BsonClassMap.LookupClassMap(typeof(T)).IdMemberMap.MemberName;
+            if (IsValidKey(key)) {
+                var keyBsonValue = BsonTypeMapper.MapToBsonValue(key, keyBsonType);
+                var filter = Builders<T>.Filter.Eq(keyMemberName, keyBsonValue);
+                return BaseCollection().Find(filter).FirstOrDefault();
+            } else return default(T);
+        }
+
+        public override int Sum(ISpecification<T> criteria, Expression<Func<T, int>> selector)
+        {
+            return QueryManager.ExecuteSum(
+                 () => FindAll(criteria, selector).ToList().Sum(),
+                 selector,
+                 criteria
+                 );
+        }
+
+        public override decimal? Sum(ISpecification<T> criteria, Expression<Func<T, decimal?>> selector)
+        {
+            return QueryManager.ExecuteSum(
+                 () => FindAll(criteria, selector).ToList().Sum(),
+                 selector,
+                 criteria
+                 );
+        }
+
+        public override decimal Sum(ISpecification<T> criteria, Expression<Func<T, decimal>> selector)
+        {
+            return QueryManager.ExecuteSum(
+                 () => FindAll(criteria, selector).ToList().Sum(),
+                 selector,
+                 criteria
+                 );
+        }
+
+        public override double? Sum(ISpecification<T> criteria, Expression<Func<T, double?>> selector)
+        {
+            return QueryManager.ExecuteSum(
+                 () => FindAll(criteria, selector).ToList().Sum(),
+                 selector,
+                 criteria
+                 );
+        }
+
+        public override double Sum(ISpecification<T> criteria, Expression<Func<T, double>> selector)
+        {
+            return QueryManager.ExecuteSum(
+                 () => FindAll(criteria, selector).ToList().Sum(),
+                 selector,
+                 criteria
+                 );
+        }
+
+        public override float? Sum(ISpecification<T> criteria, Expression<Func<T, float?>> selector)
+        {
+            return QueryManager.ExecuteSum(
+                 () => FindAll(criteria, selector).ToList().Sum(),
+                 selector,
+                 criteria
+                 );
+        }
+
+        public override float Sum(ISpecification<T> criteria, Expression<Func<T, float>> selector)
+        {
+            return QueryManager.ExecuteSum(
+                 () => FindAll(criteria, selector).ToList().Sum(),
+                 selector,
+                 criteria
+                 );
+        }
+
+        public override int? Sum(ISpecification<T> criteria, Expression<Func<T, int?>> selector)
+        {
+            return QueryManager.ExecuteSum(
+                 () => FindAll(criteria, selector).ToList().Sum(),
+                 selector,
+                 criteria
+                 );
+        }
+
+        public override long? Sum(ISpecification<T> criteria, Expression<Func<T, long?>> selector)
+        {
+            return QueryManager.ExecuteSum(
+                 () => FindAll(criteria, selector).ToList().Sum(),
+                 selector,
+                 criteria
+                 );
+        }
+
+        public override long Sum(ISpecification<T> criteria, Expression<Func<T, long>> selector)
+        {
+            return QueryManager.ExecuteSum(
+                 () => FindAll(criteria, selector).ToList().Sum(),
+                 selector,
+                 criteria
+                 );
+        }
+
+        public override double Average(ISpecification<T> criteria, Expression<Func<T, int>> selector)
+        {
+            return QueryManager.ExecuteAverage(
+                 () => FindAll(criteria, selector).ToList().Average(),
+                 selector,
+                 criteria
+                 );
+        }
+
+        public override decimal? Average(ISpecification<T> criteria, Expression<Func<T, decimal?>> selector)
+        {
+            return QueryManager.ExecuteAverage(
+                 () => FindAll(criteria, selector).ToList().Average(),
+                 selector,
+                 criteria
+                 );
+        }
+
+        public override decimal Average(ISpecification<T> criteria, Expression<Func<T, decimal>> selector)
+        {
+            return QueryManager.ExecuteAverage(
+                 () => FindAll(criteria, selector).ToList().Average(),
+                 selector,
+                 criteria
+                 );
+        }
+
+        public override double? Average(ISpecification<T> criteria, Expression<Func<T, double?>> selector)
+        {
+            return QueryManager.ExecuteAverage(
+                 () => FindAll(criteria, selector).ToList().Average(),
+                 selector,
+                 criteria
+                 );
+        }
+
+        public override double Average(ISpecification<T> criteria, Expression<Func<T, double>> selector)
+        {
+            return QueryManager.ExecuteAverage(
+                 () => FindAll(criteria, selector).ToList().Average(),
+                 selector,
+                 criteria
+                 );
+        }
+
+        public override float? Average(ISpecification<T> criteria, Expression<Func<T, float?>> selector)
+        {
+            return QueryManager.ExecuteAverage(
+                 () => FindAll(criteria, selector).ToList().Average(),
+                 selector,
+                 criteria
+                 );
+        }
+
+        public override float Average(ISpecification<T> criteria, Expression<Func<T, float>> selector)
+        {
+            return QueryManager.ExecuteAverage(
+                 () => FindAll(criteria, selector).ToList().Average(),
+                 selector,
+                 criteria
+                 );
+        }
+
+        public override double? Average(ISpecification<T> criteria, Expression<Func<T, int?>> selector)
+        {
+            return QueryManager.ExecuteAverage(
+                 () => FindAll(criteria, selector).ToList().Average(),
+                 selector,
+                 criteria
+                 );
+        }
+
+        public override double? Average(ISpecification<T> criteria, Expression<Func<T, long?>> selector)
+        {
+            return QueryManager.ExecuteAverage(
+                 () => FindAll(criteria, selector).ToList().Average(),
+                 selector,
+                 criteria
+                 );
+        }
+
+        public override double Average(ISpecification<T> criteria, Expression<Func<T, long>> selector)
+        {
+            return QueryManager.ExecuteAverage(
+                 () => FindAll(criteria, selector).ToList().Average(),
+                 selector,
+                 criteria
+                 );
         }
 
         protected override void AddItem(T entity)
         {
-            _database.GetCollection<T>(TypeName).Insert(entity);
+            BaseCollection().InsertOne(entity);
         }
 
         protected override void DeleteItem(T entity)
@@ -69,17 +309,103 @@ namespace SharpRepository.MongoDbRepository
 
             if (IsValidKey(pkValue))
             {
-                _database.GetCollection<T>(TypeName).Remove(Query.EQ("_id", new ObjectId(pkValue.ToString())));
+                var keyPropertyName = BsonClassMap.LookupClassMap(typeof(T)).IdMemberMap.MemberName;
+                var keyPair = GetMongoProperty(entity, keyPropertyName);
+                var filter = Builders<T>.Filter.Eq(keyPair.Key, keyPair.Value);
+
+                BaseCollection().DeleteOne(filter);
             }
         }
 
         protected override void UpdateItem(T entity)
         {
-            _database.GetCollection<T>(TypeName).Save(entity);
+            TKey pkValue;
+            GetPrimaryKey(entity, out pkValue);
+            if (IsValidKey(pkValue))
+            {
+                var keyMap = BsonClassMap.LookupClassMap(typeof(T)).IdMemberMap;
+                var keyPropertyName = keyMap.MemberName;
+                var keyBsonType = ((StringSerializer)keyMap.GetSerializer()).Representation;
+                var keyBsonPropertyValue = BsonTypeMapper.MapToBsonValue(pkValue, keyBsonType);
+                var keyPair = new KeyValuePair<string, BsonValue>(keyPropertyName, keyBsonPropertyValue);
+                var filter = Builders<T>.Filter.Eq(keyPair.Key, keyPair.Value);
+
+
+                var bsonMembers = BsonClassMap.LookupClassMap(typeof(T)).AllMemberMaps.Where(m => m.MemberName != keyPropertyName);
+                var updates = new List<UpdateDefinition<T>>();
+                foreach (var members in bsonMembers)
+                {
+                    var propPair = GetMongoProperty(entity, members.MemberName);
+                    updates.Add(Builders<T>.Update.Set(propPair.Key, propPair.Value));
+                }
+
+                BaseCollection().UpdateOne(filter, Builders<T>.Update.Combine(updates));
+            }
+
+        }
+
+        public static KeyValuePair<string, BsonValue> GetMongoProperty(T entity, string propertyName)
+        {
+            var value = typeof(T).GetProperty(propertyName).GetValue(entity);
+            var memberMap = BsonClassMap.LookupClassMap(typeof(T)).GetMemberMap(propertyName);
+            var memberBsonType = GetBsonType(value, memberMap);
+
+            // some "non-string types are mapped to string"
+            if (memberBsonType == BsonType.String)
+            {
+                value = value.ToString();
+            }
+
+            var bsonPropertyValue = BsonTypeMapper.MapToBsonValue(value, memberBsonType);
+            return new KeyValuePair<string, BsonValue>(propertyName, bsonPropertyValue);
+        }
+
+        protected static BsonType GetBsonType(object value, BsonMemberMap memberMap)
+        {
+            BsonType keyBsonType;
+
+            if (value == null) {
+                keyBsonType = BsonType.Null;
+            } else {
+                var propertyInfo = memberMap.GetSerializer().GetType().GetProperty("Representation");
+                if (propertyInfo != null)
+                {
+                    keyBsonType = (BsonType)propertyInfo.GetValue(memberMap.GetSerializer());
+                } else
+                {
+                    keyBsonType = BsonType.Array;
+                }
+            }
+
+            return keyBsonType;
         }
 
         protected override void SaveChanges()
         {
+        }
+
+        protected override PropertyInfo GetPrimaryKeyPropertyInfo()
+        {
+            // checks for the MongoDb BsonIdAttribute and if not there no the normal checks
+            var type = typeof(T);
+            var keyType = typeof(TKey);
+
+            return type.GetProperties().FirstOrDefault(x => x.HasAttribute<BsonIdAttribute>() && x.PropertyType == keyType)
+                ?? base.GetPrimaryKeyPropertyInfo();
+        }
+
+        public override bool GenerateKeyOnAdd
+        {
+            get { return base.GenerateKeyOnAdd; }
+            set
+            {
+                if (value == false)
+                {
+                    throw new NotSupportedException("Mongo DB driver always generates key values. SharpRepository can't avoid it.");
+                }
+
+                base.GenerateKeyOnAdd = value;
+            }
         }
 
         public override void Dispose()

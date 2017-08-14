@@ -11,7 +11,7 @@ namespace SharpRepository.XmlRepository
 {
     public abstract class XmlRepositoryBase<T, TKey> : LinqRepositoryBase<T, TKey> where T : class, new()
     {
-        private IList<T> _items = new List<T>();
+        private List<T> _items = new List<T>();
         private string _storagePath;
 
         /// <summary>
@@ -44,13 +44,15 @@ namespace SharpRepository.XmlRepository
         {
             if (!File.Exists(_storagePath)) return;
 
-            var reader = new StreamReader(_storagePath);
-            var serializer = new XmlSerializer(typeof(List<T>));
-            _items = (List<T>)serializer.Deserialize(reader);
-            reader.Close();
+            using (var stream = new FileStream(_storagePath, FileMode.Open))
+            using (var reader = new StreamReader(stream))
+            {
+                var serializer = new XmlSerializer(typeof(List<T>));
+                _items = (List<T>)serializer.Deserialize(reader);
+            }
         }
 
-        protected IList<T> Items
+        protected List<T> Items
         {
             get
             {
@@ -60,43 +62,44 @@ namespace SharpRepository.XmlRepository
 
         protected override IQueryable<T> BaseQuery(IFetchStrategy<T> fetchStrategy = null)
         {
-            return CloneList(Items).AsQueryable();
+            return Items.AsQueryable();
+            //return CloneList(Items).AsQueryable();
         }
 
-        protected override T GetQuery(TKey key)
+        protected override T GetQuery(TKey key, IFetchStrategy<T> fetchStrategy)
         {
-            return BaseQuery().FirstOrDefault(x => MatchOnPrimaryKey(x, key));
+            return BaseQuery(fetchStrategy).FirstOrDefault(x => MatchOnPrimaryKey(x, key));
         }
 
-        private static IEnumerable<T> CloneList(IList<T> list)
-        {
-            // when you Google deep copy of generic list every answer uses either the IClonable interface on the T or having the T be Serializable
-            //  since we can't really put those constraints on T I'm going to do it via reflection
-
-            var type = typeof(T);
-            var properties = type.GetProperties();
-
-            var clonedList = new List<T>(list.Count);
-
-            foreach (T item in list)
-            {
-                var newItem = new T();
-                foreach (var propInfo in properties)
-                {
-                    propInfo.SetValue(newItem, propInfo.GetValue(item, null), null);
-                }
-
-                clonedList.Add(newItem);
-            }
-
-            return clonedList;
-        }
+//        private static IEnumerable<T> CloneList(IList<T> list)
+//        {
+//            // when you Google deep copy of generic list every answer uses either the IClonable interface on the T or having the T be Serializable
+//            //  since we can't really put those constraints on T I'm going to do it via reflection
+//
+//            var type = typeof(T);
+//            var properties = type.GetProperties();
+//
+//            var clonedList = new List<T>(list.Count);
+//
+//            foreach (T item in list)
+//            {
+//                var newItem = new T();
+//                foreach (var propInfo in properties)
+//                {
+//                    propInfo.SetValue(newItem, propInfo.GetValue(item, null), null);
+//                }
+//
+//                clonedList.Add(newItem);
+//            }
+//
+//            return clonedList;
+//        }
 
         protected override void AddItem(T entity)
         {
             TKey id;
 
-            if (GetPrimaryKey(entity, out id) && Equals(id, default(TKey)))
+            if (GenerateKeyOnAdd && GetPrimaryKey(entity, out id) && Equals(id, default(TKey)))
             {
                 id = GeneratePrimaryKey();
                 SetPrimaryKey(entity, id);
@@ -110,7 +113,7 @@ namespace SharpRepository.XmlRepository
             TKey pkValue;
             GetPrimaryKey(entity, out pkValue);
 
-            var index = Items.ToList().FindIndex(x => MatchOnPrimaryKey(x, pkValue));
+            var index = Items.FindIndex(x => MatchOnPrimaryKey(x, pkValue));
             if (index >= 0)
             {
                 Items.RemoveAt(index);
@@ -122,31 +125,31 @@ namespace SharpRepository.XmlRepository
             TKey pkValue;
             GetPrimaryKey(entity, out pkValue);
 
-            var index = _items.ToList().FindIndex(x => MatchOnPrimaryKey(x, pkValue));
+            var index = Items.FindIndex(x => MatchOnPrimaryKey(x, pkValue));
             if (index >= 0)
             {
-                _items[index] = entity;
+                Items[index] = entity;
             }
         }
 
-        // need to match on primary key instead of using Equals() since the objects are not the same and are a cloned copy
+        // need to match on primary key instead of using Equals() since the objects are not the same
         private bool MatchOnPrimaryKey(T item, TKey keyValue)
         {
-            TKey value;
-            return GetPrimaryKey(item, out value) && keyValue.Equals(value);
+            return GetPrimaryKey(item, out TKey value) && keyValue.Equals(value);
         }
 
         protected override void SaveChanges()
         {
-            var writer = new StreamWriter(_storagePath, false);
-            var serializer = new XmlSerializer(typeof(List<T>));
-            serializer.Serialize(writer, _items);
-            writer.Close();
+            using (var stream = new FileStream(_storagePath, FileMode.Open))
+            using (var writer = new StreamWriter(stream))
+            {
+                var serializer = new XmlSerializer(typeof(List<T>));
+                serializer.Serialize(writer, Items);
+            }
         }
 
         public override void Dispose()
         {
-            
         }
 
         private TKey GeneratePrimaryKey()
@@ -158,10 +161,10 @@ namespace SharpRepository.XmlRepository
 
             if (typeof(TKey) == typeof(string))
             {
-                return (TKey)Convert.ChangeType("ABC"+ Guid.NewGuid().ToString("N"), typeof(TKey));
+                return (TKey)Convert.ChangeType(Guid.NewGuid().ToString("N"), typeof(TKey));
             }
 
-            var last = _items.LastOrDefault() ?? new T();
+            var last = Items.LastOrDefault() ?? new T();
 
             if (typeof(TKey) == typeof(Int32))
             {

@@ -5,12 +5,11 @@ using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
 using MongoDB.Bson.Serialization.IdGenerators;
 using MongoDB.Driver;
-using MongoDB.Driver.Builders;
 using MongoDB.Driver.Linq;
 using NUnit.Framework;
 using SharpRepository.MongoDbRepository;
 using SharpRepository.Tests.Integration.TestObjects;
-using Should;
+using Shouldly;
 
 namespace SharpRepository.Tests.Integration.Spikes
 {
@@ -25,7 +24,6 @@ namespace SharpRepository.Tests.Integration.Spikes
         public string Name { get; set; }
         public string Title { get; set; }
         public int ContactTypeId { get; set; } // for partitioning on 
-
         public List<EmailAddress> EmailAddresses { get; set; }
         public List<PhoneNumber> PhoneNumbers { get; set; }
     }
@@ -36,27 +34,27 @@ namespace SharpRepository.Tests.Integration.Spikes
         [Test]
         public void MongoDb_Supports_Basic_Crud_Operations()
         {
-            const string connectionString = "mongodb://localhost";
+            const string connectionString = "mongodb://localhost/Order";
             
             if (!MongoDbRepositoryManager.ServerIsRunning(connectionString))
             {
                 AssertIgnores.MongoServerIsNotRunning();
             }
-            
-            MongoServer server = MongoServer.Create(connectionString);
-            var databaseNames = server.GetDatabaseNames();
+
+            var cli = new MongoClient(connectionString);
+            var databaseNames = cli.ListDatabases().ToList();
             foreach (var db in databaseNames)
             {
-                server.DropDatabase(db);    
+                cli.DropDatabase(db["name"].AsString);    
             }
             
-            MongoDatabase database = server.GetDatabase("Order");
-            MongoCollection<Order> orders = database.GetCollection<Order>("Order");
+            var database = cli.GetDatabase("Order");
+            var orders = database.GetCollection<Order>("Order");
             
             Console.WriteLine("* CREATE *");
 
             var create = new Order { Name = "Big sale" };
-            database.GetCollection<Order>("Order").Insert(create);
+            database.GetCollection<Order>("Order").InsertOne(create);
 
             foreach (var order in database.GetCollection<Order>("Order").AsQueryable())
             {
@@ -64,51 +62,53 @@ namespace SharpRepository.Tests.Integration.Spikes
             }
 
             Console.WriteLine("* READ *");
-
-            var read = orders.AsQueryable().FirstOrDefault(e => e.OrderId == create.OrderId);
-            read.Name.ShouldEqual(create.Name);
+            
+            var filter = Builders<Order>.Filter.Eq(o => o.OrderId, create.OrderId);
+            var read = orders.Find(filter).ToList().FirstOrDefault();
+            read.Name.ShouldBe(create.Name);
             
             Console.WriteLine("* UPDATE *");
-
-            read.Name = "Really big sale";
-            database.GetCollection<Order>("Order").Save(read);
+            
+            var update = Builders<Order>.Update.Set(o => o.Name, "Really big sale");
+            orders.UpdateOne(filter, update);
 
             foreach (var order in database.GetCollection<Order>("Order").AsQueryable())
             {
                 Console.WriteLine(order.Name + ", " + order.OrderId);
             }
             
-            var update = database.GetCollection<Order>("Order").AsQueryable().FirstOrDefault(e => e.OrderId == read.OrderId);
-            update.OrderId.ShouldEqual(read.OrderId);
-            update.Name.ShouldEqual(read.Name);
+            var read_updated = orders.Find(filter).ToList().FirstOrDefault();
+            read_updated.OrderId.ShouldBe(read.OrderId);
+            read_updated.Name.ShouldBe("Really big sale");
 
             Console.WriteLine("* DELETE *");
 
-            var delete = database.GetCollection<Order>("Order").AsQueryable().FirstOrDefault(e => e.OrderId == update.OrderId);
-
-            database.GetCollection<Order>("Order").Remove(Query.EQ("OrderId", delete.OrderId));
+            orders.DeleteOne(filter);
             
             foreach (var order in database.GetCollection<Order>("Order").AsQueryable())
             {
                 Console.WriteLine(order.Name + ", " + order.OrderId);
             }
 
-            database.GetCollection<Order>("Order").RemoveAll();
+            orders.Count(filter).ShouldBe(0);
 
             Console.WriteLine("* DELETE ALL *");
-            
+            orders.DeleteMany(new BsonDocument());
+
             foreach (var order in database.GetCollection<Order>("Order").AsQueryable())
             {
                 Console.WriteLine(order.Name + ", " + order.OrderId);
             }
 
-            server.DropDatabase("Order");
+            orders.AsQueryable().Count().ShouldBe(0);
+
+            cli.DropDatabase("Order");
         }
         
         [Test]
         public void MongoRepository_Supports_Basic_Crud_Operations()
         {
-            const string connectionString = "mongodb://127.0.0.1";
+            const string connectionString = "mongodb://127.0.0.1/test";
 
             if (!MongoDbRepositoryManager.ServerIsRunning(connectionString))
             {
@@ -123,7 +123,7 @@ namespace SharpRepository.Tests.Integration.Spikes
             
             // Read 
             var read = repo.Get(create.OrderId);
-            read.Name.ShouldEqual(create.Name);
+            read.Name.ShouldBe(create.Name);
             
             // Update
             read.Name = "Really big sale";
@@ -132,8 +132,8 @@ namespace SharpRepository.Tests.Integration.Spikes
             var all = repo.GetAll();
             
             var update = repo.Get(read.OrderId);
-            update.OrderId.ShouldEqual(read.OrderId);
-            update.Name.ShouldEqual(read.Name);
+            update.OrderId.ShouldBe(read.OrderId);
+            update.Name.ShouldBe(read.Name);
 
             // Delete
             repo.Delete(update);

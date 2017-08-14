@@ -9,13 +9,13 @@ namespace SharpRepository.Repository.Queries
     /// </summary>
     /// <typeparam name="T">The entity type of the repository.</typeparam>
     /// <typeparam name="TSortKey">The type of the property that is being sorted.</typeparam>
-    public class PagingOptions<T, TSortKey> : SortingOptions<T, TSortKey>
+    public class PagingOptions<T, TSortKey> : SortingOptions<T, TSortKey>, IPagingOptions
     {
-        public int PageSize { get; internal set; }
-        public int PageNumber { get; internal set; }
+        public int PageSize { get; set; }
+        public int PageNumber { get; set; }
         public int Skip { get { return (PageNumber - 1) * PageSize; } }
         public int Take { get { return PageSize; } }
-        public int TotalItems { get; internal set; }
+        public int TotalItems { get;  set; }
 
         public PagingOptions(int pageNumber, int pageSize, Expression<Func<T, TSortKey>> sortExpression, bool isDescending = false)
             : base(sortExpression, isDescending)
@@ -49,12 +49,12 @@ namespace SharpRepository.Repository.Queries
         /// <returns>Unique key for a query</returns>
         public override string ToString()
         {
-            return String.Format("PagingOptions<{0},{1}>\nPageSize: {2}\nPageNumber: {3}\nSort Expression: {4}\nIsDescending: {5}",
+            return String.Format("PagingOptions<{0},{1}>\nPageSize: {2}\nPageNumber: {3}\nSort: {4}",
                 (typeof(T)).Name,
+                (typeof(TSortKey)).Name,
                 PageSize,
                 PageNumber,
-                SortExpression == null ? "null" : SortExpression.ToString(),
-                IsDescending
+                base.ToString()
                 );
         }
     }
@@ -63,10 +63,10 @@ namespace SharpRepository.Repository.Queries
     /// Used to define the paging criteria on queries run against a repository.
     /// </summary>
     /// <typeparam name="T">The entity type of the repository.</typeparam>
-    public class PagingOptions<T> : SortingOptions<T>
+    public class PagingOptions<T> : SortingOptions<T>, IPagingOptions
     {
-        public int PageSize { get; internal set; }
-        public int PageNumber { get; internal set; }
+        public int PageSize { get; set; }
+        public int PageNumber { get; set; }
         public int Skip { get { return (PageNumber - 1) * PageSize; } }
         public int Take { get { return PageSize; } }
         public int TotalItems { get; set; }
@@ -77,7 +77,6 @@ namespace SharpRepository.Repository.Queries
             PageSize = pageSize;
             PageNumber = pageNumber;
         }
-
 
         /// <summary>
         /// Applies paging to the specified query.
@@ -104,12 +103,11 @@ namespace SharpRepository.Repository.Queries
         /// <returns>Unique key for a query</returns>
         public override string ToString()
         {
-            return String.Format("PagingOptions<{0}>\nPageSize: {1}\nPageNumber: {2}\nSort Property: {3}\nIsDescending: {4}",
+            return String.Format("PagingOptions<{0}>\nPageSize: {1}\nPageNumber: {2}\nSort: {3}",
                 (typeof(T)).Name,
                 PageSize,
                 PageNumber,
-                SortProperty,
-                IsDescending
+                base.ToString()
                 );
         }
     }

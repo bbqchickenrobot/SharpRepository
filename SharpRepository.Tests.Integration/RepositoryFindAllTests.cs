@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using NUnit.Framework;
@@ -6,7 +7,7 @@ using SharpRepository.Repository.Queries;
 using SharpRepository.Repository.Specifications;
 using SharpRepository.Tests.Integration.TestAttributes;
 using SharpRepository.Tests.Integration.TestObjects;
-using Should;
+using Shouldly;
 
 namespace SharpRepository.Tests.Integration
 {
@@ -23,7 +24,20 @@ namespace SharpRepository.Tests.Integration
             }
 
             var result = repository.FindAll(new Specification<Contact>(p => p.Name == "Test User 1")); // Note: Raven doesn't like p.Name.Equals("...");
-            result.Count().ShouldEqual(1);
+            result.Count().ShouldBe(1);
+        }
+
+        [ExecuteForAllRepositories]
+        public void FindAll_Should_Return_All_Items_Which_Satisfy_Predicate(IRepository<Contact, string> repository)
+        {
+            for (int i = 1; i <= 3; i++)
+            {
+                var contact = new Contact { Name = "Test User " + i };
+                repository.Add(contact);
+            }
+
+            var result = repository.FindAll(p => p.Name == "Test User 1"); // Note: Raven doesn't like p.Name.Equals("...");
+            result.Count().ShouldBe(1);
         }
 
         [ExecuteForAllRepositories]
@@ -44,12 +58,12 @@ namespace SharpRepository.Tests.Integration
             // this fails for RavenDb because the ContactId is an int but is being used as the key, so the check on ContactId <= 5 is doing a string comparison and including ContactId = 10 as well
             //  need to look into why this happens and how to get around it
             var result = repository.FindAll(new Specification<Contact>(p => p.ContactTypeId <= totalItems / 2), queryOptions);
-            result.Count().ShouldEqual(pageSize);
-            queryOptions.TotalItems.ShouldEqual(totalItems / 2);
-            result.First().Name.ShouldEqual("Test User 3");
+            result.Count().ShouldBe(pageSize);
+            queryOptions.TotalItems.ShouldBe(totalItems / 2);
+            result.First().Name.ShouldBe("Test User 3");
         }
 
-        //[ExecuteForRepositories(RepositoryTypes.Xml,RepositoryTypes.InMemory, RepositoryTypes.Ef)]
+        //[ExecuteForRepositories(RepositoryType.Xml,RepositoryType.InMemory, RepositoryType.Ef)]
         [ExecuteForAllRepositories]
         public void FindAll_Should_Return_All_Items_Which_Satisfy_Specification_With_Paging_MagicString(IRepository<Contact, string> repository)
         {
@@ -68,9 +82,9 @@ namespace SharpRepository.Tests.Integration
             // this fails for RavenDb because the ContactId is an int but is being used as the key, so the check on ContactId <= 5 is doing a string comparison and including ContactId = 10 as well
             //  need to look into why this happens and how to get around it
             var result = repository.FindAll(new Specification<Contact>(p => p.ContactTypeId <= totalItems / 2), queryOptions);
-            result.Count().ShouldEqual(pageSize);
-            queryOptions.TotalItems.ShouldEqual(totalItems / 2);
-            result.First().Name.ShouldEqual("Test User 3");
+            result.Count().ShouldBe(pageSize);
+            queryOptions.TotalItems.ShouldBe(totalItems / 2);
+            result.First().Name.ShouldBe("Test User 3");
         }
 
         [ExecuteForAllRepositories]
@@ -83,7 +97,7 @@ namespace SharpRepository.Tests.Integration
             }
 
             var result = repository.FindAll(new Specification<Contact>(p => p.Name == "Test User 1").OrElse(new Specification<Contact>(p => p.Name == "Test User 2")));
-            result.Count().ShouldEqual(2);
+            result.Count().ShouldBe(2);
         }
 
         [ExecuteForAllRepositories]
@@ -105,9 +119,9 @@ namespace SharpRepository.Tests.Integration
                                         .OrElse(new Specification<Contact>(p => p.Name == "Test User 8"))),
                             queryOptions);
 
-            result.Count().ShouldEqual(1);
-            queryOptions.TotalItems.ShouldEqual(3);
-            result.First().Name.ShouldEqual("Test User 8");
+            result.Count().ShouldBe(1);
+            queryOptions.TotalItems.ShouldBe(3);
+            result.First().Name.ShouldBe("Test User 8");
         }
 
         [ExecuteForAllRepositories]
@@ -129,9 +143,9 @@ namespace SharpRepository.Tests.Integration
                                         .OrElse(new Specification<Contact>(p => p.Name == "Test User 8"))),
                             queryOptions);
 
-            result.Count().ShouldEqual(1);
-            queryOptions.TotalItems.ShouldEqual(3);
-            result.First().Name.ShouldEqual("Test User 1");
+            result.Count().ShouldBe(1);
+            queryOptions.TotalItems.ShouldBe(3);
+            result.First().Name.ShouldBe("Test User 1");
         }
 
         [ExecuteForAllRepositories]
@@ -153,9 +167,9 @@ namespace SharpRepository.Tests.Integration
                                         .OrElse(new Specification<Contact>(p => p.Name == "Test User 8"))),
                             queryOptions);
 
-            result.Count().ShouldEqual(1);
-            queryOptions.TotalItems.ShouldEqual(3);
-            result.First().Name.ShouldEqual("Test User 8");
+            result.Count().ShouldBe(1);
+            queryOptions.TotalItems.ShouldBe(3);
+            result.First().Name.ShouldBe("Test User 8");
         }
 
         [ExecuteForAllRepositories]
@@ -177,9 +191,9 @@ namespace SharpRepository.Tests.Integration
                                         .OrElse(new Specification<Contact>(p => p.Name == "Test User 8"))),
                             queryOptions);
 
-            result.Count().ShouldEqual(1);
-            queryOptions.TotalItems.ShouldEqual(3);
-            result.First().Name.ShouldEqual("Test User 1");
+            result.Count().ShouldBe(1);
+            queryOptions.TotalItems.ShouldBe(3);
+            result.First().Name.ShouldBe("Test User 1");
         }
     }
 }

@@ -1,51 +1,73 @@
 using System.Collections.Generic;
-using System.Data.Entity;
-using System.Data.Entity.Infrastructure;
+//using System.Data.Entity;
+//using System.Data.Entity.Infrastructure;
 using System.Linq;
 using NUnit.Framework;
 using Raven.Client.Document;
 using Raven.Client.Embedded;
+using SharpRepository.CouchDbRepository;
 using SharpRepository.Db4oRepository;
 using SharpRepository.Tests.Integration.TestObjects;
 using SharpRepository.XmlRepository;
 using SharpRepository.EfRepository;
+using SharpRepository.EfCoreRepository;
 using SharpRepository.RavenDbRepository;
 using SharpRepository.MongoDbRepository;
 using SharpRepository.InMemoryRepository;
+using SharpRepository.CacheRepository;
+using System;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
+using SharpRepository.Repository.Caching;
+using Microsoft.Extensions.Caching.Memory;
+using Raven.Client;
 
 namespace SharpRepository.Tests.Integration.Data
 {
     public class RepositoryTestCaseDataFactory
     {
-        public static IEnumerable<TestCaseData> Build(RepositoryTypes[] includeTypes)
+        public static IEnumerable<TestCaseData> Build(RepositoryType[] includeType)
         {
-            if (includeTypes.Contains(RepositoryTypes.InMemory))
+            if (includeType.Contains(RepositoryType.InMemory))
             {
                 yield return new TestCaseData(new InMemoryRepository<Contact, string>()).SetName("InMemoryRepository Test");
             }
 
-            if (includeTypes.Contains(RepositoryTypes.Xml))
+            if (includeType.Contains(RepositoryType.Xml))
             {
                 var xmlDataDirectoryPath = XmlDataDirectoryFactory.Build("Contact");
                 yield return
                     new TestCaseData(new XmlRepository<Contact, string>(xmlDataDirectoryPath)).SetName("XmlRepository Test");
             }
 
-            if (includeTypes.Contains(RepositoryTypes.Ef))
+            if (includeType.Contains(RepositoryType.Ef))
             {
                 var dbPath = EfDataDirectoryFactory.Build();
-                Database.DefaultConnectionFactory = new SqlCeConnectionFactory("System.Data.SqlServerCe.4.0");
                 yield return
-                    new TestCaseData(new EfRepository<Contact, string>(new TestObjectEntities("Data Source=" + dbPath))).SetName("EfRepository Test");
+                    new TestCaseData(new EfRepository<Contact, string>(new TestObjectContext("Data Source=" + dbPath))).SetName("EfRepository Test");
             }
 
-            if (includeTypes.Contains(RepositoryTypes.Dbo4))
+            if (includeType.Contains(RepositoryType.EfCore))
+            {
+                var connection = new SqliteConnection("DataSource=:memory:");
+                connection.Open();
+
+                var options = new DbContextOptionsBuilder<TestObjectContextCore>()
+                     .UseSqlite(connection)
+                     .Options;
+
+                // Create the schema in the database
+                var context = new TestObjectContextCore(options);
+                context.Database.EnsureCreated();
+                yield return new TestCaseData(new EfCoreRepository<Contact, string>(context)).SetName("EfCoreRepository Test");
+            }
+            if (includeType.Contains(RepositoryType.Dbo4))
             {
                 var dbPath = Db4oDataDirectoryFactory.Build("Contact");
                 yield return new TestCaseData(new Db4oRepository<Contact, string>(dbPath)).SetName("Db4oRepository Test");
             }
 
-            if (includeTypes.Contains(RepositoryTypes.MongoDb))
+            if (includeType.Contains(RepositoryType.MongoDb))
             {
                 string connectionString = MongoDbConnectionStringFactory.Build("Contact");
            
@@ -56,14 +78,39 @@ namespace SharpRepository.Tests.Integration.Data
                 }
             }
 
-            if (includeTypes.Contains(RepositoryTypes.RavenDb))
+            if (includeType.Contains(RepositoryType.RavenDb))
             {
                 var documentStore = new EmbeddableDocumentStore
-                                        {
-                                            RunInMemory = true,
-                                            Conventions = { DefaultQueryingConsistency = ConsistencyOptions.QueryYourWrites }
-                                        };
-                yield return new TestCaseData(new RavenDbRepository<Contact, string>(documentStore)).SetName("RavenDbRepository Test");
+                {
+                        RunInMemory = true,
+                        DataDirectory = "~\\Data\\RavenDb"
+                };
+                if (IntPtr.Size == 4)
+                {
+                    documentStore.Configuration.Storage.Voron.AllowOn32Bits = true;
+                }
+
+                IDocumentStore x = new EmbeddableDocumentStore();
+                yield return new TestCaseData(new RavenDbRepository<Contact, string>(documentStore: documentStore)).SetName("RavenDbRepository Test");
+            }
+
+            if (includeType.Contains(RepositoryType.Cache))
+            {
+                var cachingProvider = new InMemoryCachingProvider(new MemoryCache(new MemoryCacheOptions()));
+                yield return new TestCaseData(new CacheRepository<Contact, string>(CachePrefixFactory.Build(), cachingProvider)).SetName("CacheRepository Test");
+            }
+
+            if (includeType.Contains(RepositoryType.CouchDb))
+            {
+                if (CouchDbRepositoryManager.ServerIsRunning(CouchDbUrl.Host, CouchDbUrl.Port))
+                {
+                    var databaseName = CouchDbDatabaseNameFactory.Build("Contact");
+                    CouchDbRepositoryManager.DropDatabase(CouchDbUrl.Host, CouchDbUrl.Port, databaseName);
+                    CouchDbRepositoryManager.CreateDatabase(CouchDbUrl.Host, CouchDbUrl.Port, databaseName);
+
+                    yield return new TestCaseData(new CouchDbRepository<Contact>(CouchDbUrl.Host, CouchDbUrl.Port, databaseName)).SetName("CouchDbRepository Test");
+                }
+
             }
         }
     }

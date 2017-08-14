@@ -1,17 +1,21 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
+using System.Linq.Expressions;
 using Raven.Client;
 using Raven.Client.Document;
 using SharpRepository.Repository;
 using SharpRepository.Repository.Caching;
 using SharpRepository.Repository.FetchStrategies;
+using SharpRepository.Repository.Queries;
+using SharpRepository.Repository.Specifications;
 
 namespace SharpRepository.RavenDbRepository
 {
-    public class RavenDbRepositoryBase<T, TKey> : LinqRepositoryBase<T, TKey> where T : class, new()
+    public class RavenDbRepositoryBase<T, TKey> : LinqRepositoryBase<T, TKey> where T : class
     {
-        private DocumentStore _documentStore;
-        private IDocumentSession _session;
+        public IDocumentStore DocumentStore;
+        public  IDocumentSession Session; // TODO: public so we can access it in the AdvancedConfiguration Aspect, not sure I like this
 
         internal RavenDbRepositoryBase(ICachingStrategy<T, TKey> cachingStrategy = null) : base(cachingStrategy) 
         {
@@ -23,15 +27,15 @@ namespace SharpRepository.RavenDbRepository
             Initialize(new DocumentStore { Url = url });
         }
 
-        internal RavenDbRepositoryBase(DocumentStore documentStore, ICachingStrategy<T, TKey> cachingStrategy = null) : base(cachingStrategy) 
+        internal RavenDbRepositoryBase(IDocumentStore documentStore, ICachingStrategy<T, TKey> cachingStrategy = null) : base(cachingStrategy) 
         {
             Initialize(documentStore);
         }  
 
-        private void Initialize(DocumentStore documentStore = null)
+        private void Initialize(IDocumentStore documentStore = null)
         {
-            _documentStore = documentStore ?? new DocumentStore { Url = "http://localhost:8080"};
-            _documentStore.Initialize();
+            DocumentStore = documentStore ?? new DocumentStore { Url = "http://localhost:8080"};
+            DocumentStore.Initialize();
             
             // see if we need to change the type name that defaults to Id
             var propInfo = GetPrimaryKeyPropertyInfo();
@@ -41,42 +45,282 @@ namespace SharpRepository.RavenDbRepository
                 // this is a global convention so will be used regardless of the entity type that is accessing the document store
                 //  this may or may not be a problem since the repository creates this and it's for a single entity type
                 //  we will need to test this, especially when 2 different repositories are instantiated at the same time
-                _documentStore.Conventions.FindIdentityProperty = p => p.Name == propInfo.Name;
+                DocumentStore.Conventions.FindIdentityProperty = p => p.Name == propInfo.Name;
             }
 
-            _session = _documentStore.OpenSession();
+            // when upgrading to the new RavenDb.Client the following error is thrown when using an int as the PK
+            //  System.InvalidOperationException : Attempt to query by id only is blocked, you should use call session.Load("RavenTestIntKeys/1"); instead of session.Query().Where(x=>x.Id == "RavenTestIntKeys/1");
+            //      You can turn this error off by specifying documentStore.Conventions.AllowQueriesOnId = true;, but that is not recommend and provided for backward compatibility reasons only.
+            //  So for now we will follow that advice and turn on the old convention
+            // TODO: look at using a new way of doing the GetQuery to not have this issue when the PK is an int
+            DocumentStore.Conventions.AllowQueriesOnId = true;
+
+            Session = DocumentStore.OpenSession();
         }
 
         protected override IQueryable<T> BaseQuery(IFetchStrategy<T> fetchStrategy = null)
         {
             // TODO: see about Raven Include syntax
-            return _session.Query<T>();
+            return Session.Query<T>();
         }
 
-        protected override T GetQuery(TKey key)
+        protected override T GetQuery(TKey key, IFetchStrategy<T> fetchStrategy)
         {
-            if (typeof(TKey) == typeof(string))
-                return _session.Load<T>(key as string);
+            try
+            {
+                return typeof(TKey) == typeof(string) ? Session.Load<T>(key as string) : base.GetQuery(key, fetchStrategy);
+            } catch (ArgumentException)
+            {
+                return null;
+            }
+        }
 
-            return base.GetQuery(key);
+        public override IEnumerable<T> GetMany(params TKey[] keys)
+        {
+            return GetMany(keys.ToList());
+        }
+
+        public override IEnumerable<T> GetMany(IEnumerable<TKey> keys)
+        {
+            return keys.Select(Get);
+        }
+
+        public override IEnumerable<TResult> GetMany<TResult>(Expression<Func<T, TResult>> selector, params TKey[] keys)
+        {
+            return GetMany(keys.ToList(), selector);
+        }
+
+        public override IEnumerable<TResult> GetMany<TResult>(IEnumerable<TKey> keys, Expression<Func<T, TResult>> selector)
+        {
+            return keys.Select(x => Get(x, selector));
+        }
+
+        public override IDictionary<TKey, T> GetManyAsDictionary(params TKey[] keys)
+        {
+            return GetManyAsDictionary(keys.ToList());
+        }
+
+        public override IDictionary<TKey, T> GetManyAsDictionary(IEnumerable<TKey> keys)
+        {
+            return GetMany(keys).ToDictionary(GetPrimaryKey);
+        }
+
+        public override TResult Min<TResult>(ISpecification<T> criteria, Expression<Func<T, TResult>> selector)
+        {
+            var pagingOptions = new PagingOptions<T, TResult>(1, 1, selector);
+
+            return QueryManager.ExecuteMin(
+                () => FindAll(criteria, selector, pagingOptions).ToList().First(),
+                selector,
+                criteria
+                );
+        }
+
+        public override TResult Max<TResult>(ISpecification<T> criteria, Expression<Func<T, TResult>> selector)
+        {
+            var pagingOptions = new PagingOptions<T, TResult>(1, 1, selector, isDescending: true);
+
+            return QueryManager.ExecuteMin(
+                () => FindAll(criteria, selector, pagingOptions).ToList().First(),
+                selector,
+                criteria
+                );
+        }
+
+        public override int Sum(ISpecification<T> criteria, Expression<Func<T, int>> selector)
+        {
+            return QueryManager.ExecuteSum(
+                 () => FindAll(criteria, selector).ToList().Sum(),
+                 selector,
+                 criteria
+                 );
+        }
+
+        public override decimal? Sum(ISpecification<T> criteria, Expression<Func<T, decimal?>> selector)
+        {
+            return QueryManager.ExecuteSum(
+                 () => FindAll(criteria, selector).ToList().Sum(),
+                 selector,
+                 criteria
+                 );
+        }
+
+        public override decimal Sum(ISpecification<T> criteria, Expression<Func<T, decimal>> selector)
+        {
+            return QueryManager.ExecuteSum(
+                 () => FindAll(criteria, selector).ToList().Sum(),
+                 selector,
+                 criteria
+                 );
+        }
+
+        public override double? Sum(ISpecification<T> criteria, Expression<Func<T, double?>> selector)
+        {
+            return QueryManager.ExecuteSum(
+                 () => FindAll(criteria, selector).ToList().Sum(),
+                 selector,
+                 criteria
+                 );
+        }
+
+        public override double Sum(ISpecification<T> criteria, Expression<Func<T, double>> selector)
+        {
+            return QueryManager.ExecuteSum(
+                 () => FindAll(criteria, selector).ToList().Sum(),
+                 selector,
+                 criteria
+                 );
+        }
+
+        public override float? Sum(ISpecification<T> criteria, Expression<Func<T, float?>> selector)
+        {
+            return QueryManager.ExecuteSum(
+                 () => FindAll(criteria, selector).ToList().Sum(),
+                 selector,
+                 criteria
+                 );
+        }
+
+        public override float Sum(ISpecification<T> criteria, Expression<Func<T, float>> selector)
+        {
+            return QueryManager.ExecuteSum(
+                 () => FindAll(criteria, selector).ToList().Sum(),
+                 selector,
+                 criteria
+                 );
+        }
+
+        public override int? Sum(ISpecification<T> criteria, Expression<Func<T, int?>> selector)
+        {
+            return QueryManager.ExecuteSum(
+                 () => FindAll(criteria, selector).ToList().Sum(),
+                 selector,
+                 criteria
+                 );
+        }
+
+        public override long? Sum(ISpecification<T> criteria, Expression<Func<T, long?>> selector)
+        {
+            return QueryManager.ExecuteSum(
+                 () => FindAll(criteria, selector).ToList().Sum(),
+                 selector,
+                 criteria
+                 );
+        }
+
+        public override long Sum(ISpecification<T> criteria, Expression<Func<T, long>> selector)
+        {
+            return QueryManager.ExecuteSum(
+                 () => FindAll(criteria, selector).ToList().Sum(),
+                 selector,
+                 criteria
+                 );
+        }
+
+        public override double Average(ISpecification<T> criteria, Expression<Func<T, int>> selector)
+        {
+            return QueryManager.ExecuteAverage(
+                 () => FindAll(criteria, selector).ToList().Average(),
+                 selector,
+                 criteria
+                 );
+        }
+
+        public override decimal? Average(ISpecification<T> criteria, Expression<Func<T, decimal?>> selector)
+        {
+            return QueryManager.ExecuteAverage(
+                 () => FindAll(criteria, selector).ToList().Average(),
+                 selector,
+                 criteria
+                 );
+        }
+
+        public override decimal Average(ISpecification<T> criteria, Expression<Func<T, decimal>> selector)
+        {
+            return QueryManager.ExecuteAverage(
+                 () => FindAll(criteria, selector).ToList().Average(),
+                 selector,
+                 criteria
+                 );
+        }
+
+        public override double? Average(ISpecification<T> criteria, Expression<Func<T, double?>> selector)
+        {
+            return QueryManager.ExecuteAverage(
+                 () => FindAll(criteria, selector).ToList().Average(),
+                 selector,
+                 criteria
+                 );
+        }
+
+        public override double Average(ISpecification<T> criteria, Expression<Func<T, double>> selector)
+        {
+            return QueryManager.ExecuteAverage(
+                 () => FindAll(criteria, selector).ToList().Average(),
+                 selector,
+                 criteria
+                 );
+        }
+
+        public override float? Average(ISpecification<T> criteria, Expression<Func<T, float?>> selector)
+        {
+            return QueryManager.ExecuteAverage(
+                 () => FindAll(criteria, selector).ToList().Average(),
+                 selector,
+                 criteria
+                 );
+        }
+
+        public override float Average(ISpecification<T> criteria, Expression<Func<T, float>> selector)
+        {
+            return QueryManager.ExecuteAverage(
+                 () => FindAll(criteria, selector).ToList().Average(),
+                 selector,
+                 criteria
+                 );
+        }
+
+        public override double? Average(ISpecification<T> criteria, Expression<Func<T, int?>> selector)
+        {
+            return QueryManager.ExecuteAverage(
+                 () => FindAll(criteria, selector).ToList().Average(),
+                 selector,
+                 criteria
+                 );
+        }
+
+        public override double? Average(ISpecification<T> criteria, Expression<Func<T, long?>> selector)
+        {
+            return QueryManager.ExecuteAverage(
+                 () => FindAll(criteria, selector).ToList().Average(),
+                 selector,
+                 criteria
+                 );
+        }
+
+        public override double Average(ISpecification<T> criteria, Expression<Func<T, long>> selector)
+        {
+            return QueryManager.ExecuteAverage(
+                 () => FindAll(criteria, selector).ToList().Average(),
+                 selector,
+                 criteria
+                 );
         }
 
         protected override void AddItem(T entity)
         {
-            TKey id;
-            
-            if (GetPrimaryKey(entity, out id) && Equals(id, default(TKey)))
+            if (GenerateKeyOnAdd && GetPrimaryKey(entity, out TKey id) && Equals(id, default(TKey)))
             {
                 id = GeneratePrimaryKey();
                 SetPrimaryKey(entity, id);
             }
 
-            _session.Store(entity);
+            Session.Store(entity);
         }
 
         protected override void DeleteItem(T entity)
         {
-            _session.Delete(entity);
+            Session.Delete(entity);
         }
 
         protected override void UpdateItem(T entity)
@@ -86,16 +330,30 @@ namespace SharpRepository.RavenDbRepository
 
         protected override void SaveChanges()
         {
-            _session.SaveChanges();
+            Session.SaveChanges();
         }
 
         public override void Dispose()
         {
-            if (_session != null)
-                _session.Dispose();
+            if (Session != null)
+                Session.Dispose();
 
-            if (_documentStore != null)
-                _documentStore.Dispose();
+            if (DocumentStore != null)
+                DocumentStore.Dispose();
+        }
+
+        public override bool GenerateKeyOnAdd
+        {
+            get { return base.GenerateKeyOnAdd; }
+            set
+            {
+                if (value == false)
+                {
+                    throw new NotSupportedException("Raven DB driver always generates key values. SharpRepository can't avoid it.");
+                }
+
+                base.GenerateKeyOnAdd = value;
+            }
         }
 
         private TKey GeneratePrimaryKey()

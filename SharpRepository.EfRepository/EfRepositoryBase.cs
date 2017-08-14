@@ -1,20 +1,23 @@
 using System;
-using System.Data;
+using System.ComponentModel.DataAnnotations;
 using System.Data.Entity;
 using System.Linq;
+using System.Reflection;
 using SharpRepository.Repository;
 using SharpRepository.Repository.Caching;
 using SharpRepository.Repository.FetchStrategies;
+using SharpRepository.Repository.Helpers;
 
 namespace SharpRepository.EfRepository
 {
-    public class EfRepositoryBase<T, TKey> : LinqRepositoryBase<T, TKey> where T : class, new()
+    public class EfRepositoryBase<T, TKey> : LinqRepositoryBase<T, TKey> where T : class
     {
         protected IDbSet<T> DbSet { get; private set; }
         protected DbContext Context { get; private set; }
 
         internal EfRepositoryBase(DbContext dbContext, ICachingStrategy<T, TKey> cachingStrategy = null) : base(cachingStrategy)
         {
+            if (dbContext == null) throw new ArgumentNullException("dbContext");
             Initialize(dbContext);
         }
 
@@ -29,7 +32,7 @@ namespace SharpRepository.EfRepository
             if (typeof(TKey) == typeof(Guid) || typeof(TKey) == typeof(string))
             {
                 TKey id;
-                if (GetPrimaryKey(entity, out id) && Equals(id, default(TKey)))
+                if (GenerateKeyOnAdd && GetPrimaryKey(entity, out id) && Equals(id, default(TKey)))
                 {
                     id = GeneratePrimaryKey();
                     SetPrimaryKey(entity, id);
@@ -40,13 +43,54 @@ namespace SharpRepository.EfRepository
 
         protected override void DeleteItem(T entity)
         {
-            DbSet.Remove(entity);
+          /* Self referencing entities with nullable keys will be set null during delete. 
+           * If you have a partition on a self referencing nullable property then the later generated partition key will be incorrect 
+           * causing the partition generation to fail to increment and the old deleted cache enteries will be returned from the cache. */
+
+          var entry = Context.Entry<T>(entity);
+          entry.State = EntityState.Detached;
+
+          // Get an seperate attached entity.
+          TKey key;
+          if (GetPrimaryKey(entity, out key))
+          {
+            var attachedEntity = Context.Set<T>().Find(key);
+            if (attachedEntity != null)
+              DbSet.Remove(attachedEntity);
+          }
         }
 
         protected override void UpdateItem(T entity)
         {
-            // mark this entity as modified, in case it is not currently attached to this context
-            Context.Entry(entity).State = EntityState.Modified;
+            var entry = Context.Entry<T>(entity);
+
+            try
+            {
+                if (entry.State == EntityState.Detached)
+                {
+
+                    if (GetPrimaryKey(entity, out TKey key))
+                    {
+                        // check to see if this item is already attached
+                        //  if it is then we need to copy the values to the attached value instead of changing the State to modified since it will throw a duplicate key exception
+                        //  specifically: "An object with the same key already exists in the ObjectStateManager. The ObjectStateManager cannot track multiple objects with the same key."
+                        var attachedEntity = Context.Set<T>().Find(key);
+                        if (attachedEntity != null)
+                        {
+                            Context.Entry(attachedEntity).CurrentValues.SetValues(entity);
+
+                            return;
+                        }
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                // ignore and try the default behavior
+            }
+
+            // default
+            entry.State = EntityState.Modified;
         }
 
         protected override void SaveChanges()
@@ -61,9 +105,20 @@ namespace SharpRepository.EfRepository
         }
 
         // we override the implementation fro LinqBaseRepository becausee this is built in and doesn't need to find the key column and do dynamic expressions, etc.
-        protected override T GetQuery(TKey key)
+        //  this also provides the EF5 first level caching out of the box
+        protected override T GetQuery(TKey key, IFetchStrategy<T> fetchStrategy)
         {
-            return DbSet.Find(key);
+            return fetchStrategy == null ? DbSet.Find(key) : base.GetQuery(key, fetchStrategy);
+        }
+
+        protected override PropertyInfo GetPrimaryKeyPropertyInfo()
+        {
+            // checks for the Code First KeyAttribute and if not there do the normal checks
+            var type = typeof(T);
+            var keyType = typeof(TKey);
+
+            return type.GetProperties().FirstOrDefault(x => x.HasAttribute<KeyAttribute>() && x.PropertyType == keyType)
+                ?? base.GetPrimaryKeyPropertyInfo();
         }
 
         public override void Dispose()

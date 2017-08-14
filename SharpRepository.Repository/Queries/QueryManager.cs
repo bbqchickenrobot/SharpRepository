@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq.Expressions;
 using SharpRepository.Repository.Caching;
 using SharpRepository.Repository.Specifications;
 
@@ -12,23 +13,30 @@ namespace SharpRepository.Repository.Queries
     /// </summary>
     /// <typeparam name="T"></typeparam>
     /// <typeparam name="TKey">The type of the key.</typeparam>
-    public class QueryManager<T, TKey> where T : class
+    public partial class QueryManager<T, TKey> where T : class
     {
         private readonly ICachingStrategy<T, TKey> _cachingStrategy;
 
         public QueryManager(ICachingStrategy<T, TKey> cachingStrategy)
         {
+            CacheUsed = false;
+            CacheEnabled = true;
             _cachingStrategy = cachingStrategy ?? new NoCachingStrategy<T, TKey>();
         }
 
+        public bool CacheUsed { get; private set; }
+
+        public bool CacheEnabled { get; set; }
+
         public T ExecuteGet(Func<T> query, TKey key)
         {
-            T result;
-            if (_cachingStrategy.TryGetResult(key, out result))
+            if (CacheEnabled && _cachingStrategy.TryGetResult(key, out T result))
             {
+                CacheUsed = true;
                 return result;
             }
 
+            CacheUsed = false;
             result = query.Invoke();
 
             _cachingStrategy.SaveGetResult(key, result);
@@ -36,69 +44,76 @@ namespace SharpRepository.Repository.Queries
             return result;
         }
 
-        public IEnumerable<T> ExecuteGetAll(Func<IEnumerable<T>> query, IQueryOptions<T> queryOptions)
+        public IEnumerable<TResult> ExecuteGetAll<TResult>(Func<IEnumerable<TResult>> query, Expression<Func<T, TResult>> selector, IQueryOptions<T> queryOptions)
         {
-            IEnumerable<T> result;
-            if (_cachingStrategy.TryGetAllResult(queryOptions, out result))
+            if (CacheEnabled && _cachingStrategy.TryGetAllResult(queryOptions, selector, out IEnumerable<TResult> result))
             {
+                CacheUsed = true;
                 return result;
             }
 
+            CacheUsed = false;
             result = query.Invoke();
 
-            _cachingStrategy.SaveGetAllResult(queryOptions, result);
+            _cachingStrategy.SaveGetAllResult(queryOptions, selector, result);
 
             return result;
         }
 
-        public IEnumerable<T> ExecuteFindAll(Func<IEnumerable<T>> query, ISpecification<T> criteria, IQueryOptions<T> queryOptions)
+        public IEnumerable<TResult> ExecuteFindAll<TResult>(Func<IEnumerable<TResult>> query, ISpecification<T> criteria, Expression<Func<T, TResult>> selector,  IQueryOptions<T> queryOptions)
         {
-            IEnumerable<T> result;
-            if (_cachingStrategy.TryFindAllResult(criteria, queryOptions, out result))
+            if (CacheEnabled && _cachingStrategy.TryFindAllResult(criteria, queryOptions, selector, out IEnumerable<TResult> result))
             {
+                CacheUsed = true;
                 return result;
             }
 
+            CacheUsed = false;
             result = query.Invoke();
 
-            _cachingStrategy.SaveFindAllResult(criteria, queryOptions, result);
+            _cachingStrategy.SaveFindAllResult(criteria, queryOptions, selector, result);
 
             return result;
         }
 
-        public T ExecuteFind(Func<T> query, ISpecification<T> criteria, IQueryOptions<T> queryOptions)
+        public TResult ExecuteFind<TResult>(Func<TResult> query, ISpecification<T> criteria, Expression<Func<T, TResult>> selector,  IQueryOptions<T> queryOptions)
         {
-            T result;
-            if (_cachingStrategy.TryFindResult(criteria, queryOptions, out result))
+            if (CacheEnabled && _cachingStrategy.TryFindResult(criteria, queryOptions, selector, out TResult result))
             {
+                CacheUsed = true;
                 return result;
             }
 
+            CacheUsed = false;
             result = query.Invoke();
 
-            _cachingStrategy.SaveFindResult(criteria, queryOptions, result);
+            _cachingStrategy.SaveFindResult(criteria, queryOptions, selector, result);
 
             return result;
         }
 
         public void OnSaveExecuted()
         {
-            _cachingStrategy.Save();
+            if (CacheEnabled)
+                _cachingStrategy.Save();
         }
 
         public void OnItemDeleted(TKey key, T item)
         {
-            _cachingStrategy.Delete(key, item);
+            if (CacheEnabled)
+                _cachingStrategy.Delete(key, item);
         }
 
         public void OnItemAdded(TKey key, T item)
         {
-            _cachingStrategy.Add(key, item);
+            if (CacheEnabled)
+                _cachingStrategy.Add(key, item);
         }
 
         public void OnItemUpdated(TKey key, T item)
         {
-            _cachingStrategy.Update(key, item);
+            if (CacheEnabled)
+                _cachingStrategy.Update(key, item);
         }
     }
 }

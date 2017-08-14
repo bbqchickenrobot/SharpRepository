@@ -1,7 +1,10 @@
 ﻿using System;
 using System.Linq;
 using System.Linq.Expressions;
+using SharpRepository.Repository.Caching.Hash;
 using SharpRepository.Repository.FetchStrategies;
+using System.Collections;
+using System.Collections.Generic;
 
 namespace SharpRepository.Repository.Specifications
 {
@@ -23,98 +26,199 @@ namespace SharpRepository.Repository.Specifications
     /// <typeparam name="T"></typeparam>
     public class Specification<T> : ISpecification<T>
     {
+        public Specification()
+            : this((Expression<Func<T, bool>>)null)
+        {
+            // null Predicate means it matches everything
+        }
+
         public Specification(Expression<Func<T, bool>> predicate)
         {
             Predicate = predicate;
             FetchStrategy = new GenericFetchStrategy<T>();
         }
 
+        public Specification(ISpecification<T> specification)
+        {
+            Predicate = specification.Predicate;
+            FetchStrategy = specification.FetchStrategy;
+        }
+
         #region ISpecification<T> Members
 
         public Expression<Func<T, bool>> Predicate { get; set; }
 
-        public T SatisfyingEntityFrom(IQueryable<T> query)
+        public virtual T SatisfyingEntityFrom(IQueryable<T> query)
         {
-            return query.Where(Predicate).FirstOrDefault();
+            return SatisfyingEntitiesFrom(query).FirstOrDefault();
         }
 
-        public IQueryable<T> SatisfyingEntitiesFrom(IQueryable<T> query)
+        public virtual IQueryable<T> SatisfyingEntitiesFrom(IQueryable<T> query)
         {
-            return query.Where(Predicate);
+            return Predicate == null ? query : query.Where(Predicate);
         }
 
         public bool IsSatisfiedBy(T entity)
         {
-            return new[] {entity}.AsQueryable().Any(Predicate);
+            return Predicate == null || new[] { entity }.AsQueryable().Any(Predicate);
         }
 
         public IFetchStrategy<T> FetchStrategy { get; set; }
 
         #endregion
 
-        public Specification<T> And(Specification<T> specification)
+        protected virtual Specification<T> Instanciate(Expression<Func<T, bool>> predicate, IFetchStrategy<T> strategy = null)
         {
-            return new Specification<T>(Predicate.And(specification.Predicate));
+            var specification = new Specification<T>(predicate);
+            if (strategy != null)
+                specification.FetchStrategy = strategy;
+
+            return specification;
         }
 
-        public Specification<T> And(Expression<Func<T, bool>> predicate)
+        protected IFetchStrategy<T> InstanciateFetchStrategy(IFetchStrategy<T> strategy)
         {
-            return new Specification<T>(Predicate.And(predicate));
+            var thisPaths = FetchStrategy != null ? FetchStrategy.IncludePaths : new List<string>();
+            var paramPaths = strategy != null ? strategy.IncludePaths : new List<string>();
+            var includePaths = thisPaths.Union(paramPaths);
+
+            var newStrategy = new GenericFetchStrategy<T>();
+            foreach (var includePath in includePaths)
+            {
+                newStrategy.Include(includePath);
+            }
+
+            return newStrategy;
         }
 
-        public Specification<T> AndAlso(Specification<T> specification)
+        public ISpecification<T> And(ISpecification<T> specification)
         {
-            return new Specification<T>(Predicate.AndAlso(specification.Predicate));
+            return Instanciate(Predicate.And(specification.Predicate), InstanciateFetchStrategy(specification.FetchStrategy) );
         }
 
-        public Specification<T> AndAlso(Expression<Func<T, bool>> predicate)
+        public ISpecification<T> And(Expression<Func<T, bool>> predicate)
         {
-            return new Specification<T>(Predicate.AndAlso(predicate));
+            return Instanciate(Predicate.And(predicate), FetchStrategy);
         }
 
-        public Specification<T> Not()
+        public ISpecification<T> AndAlso(ISpecification<T> specification)
         {
-            return new Specification<T>(Predicate.Not());
+            return Instanciate(Predicate.AndAlso(specification.Predicate), InstanciateFetchStrategy(specification.FetchStrategy));
         }
 
-        public Specification<T> AndNot(Specification<T> specification)
+        public ISpecification<T> AndAlso(Expression<Func<T, bool>> predicate)
         {
-            return new Specification<T>(Predicate.AndNot(specification.Predicate));
+            return Instanciate(Predicate.AndAlso(predicate), FetchStrategy);
         }
 
-        public Specification<T> AndNot(Expression<Func<T, bool>> predicate)
+        public ISpecification<T> Not()
         {
-            return new Specification<T>(Predicate.AndNot(predicate));
+            return Instanciate(Predicate.Not(), FetchStrategy);
         }
 
-        public Specification<T> OrNot(Specification<T> specification)
+        public ISpecification<T> AndNot(ISpecification<T> specification)
         {
-            return new Specification<T>(Predicate.OrNot(specification.Predicate));
+            return Instanciate(Predicate.AndNot(specification.Predicate), InstanciateFetchStrategy(specification.FetchStrategy));
         }
 
-        public Specification<T> OrNot(Expression<Func<T, bool>> predicate)
+        public ISpecification<T> AndNot(Expression<Func<T, bool>> predicate)
         {
-            return new Specification<T>(Predicate.OrNot(predicate));
+            return Instanciate(Predicate.AndNot(predicate), FetchStrategy);
         }
 
-        public Specification<T> Or(Specification<T> specification)
+        public ISpecification<T> OrNot(ISpecification<T> specification)
         {
-            return new Specification<T>(Predicate.Or(specification.Predicate));
+            return Instanciate(Predicate.OrNot(specification.Predicate), InstanciateFetchStrategy(specification.FetchStrategy));
         }
 
-        public Specification<T> Or(Expression<Func<T, bool>> predicate)
+        public ISpecification<T> OrNot(Expression<Func<T, bool>> predicate)
         {
-            return new Specification<T>(Predicate.Or(predicate));
+            return Instanciate(Predicate.OrNot(predicate), FetchStrategy);
         }
 
-        public Specification<T> OrElse(Specification<T> specification)
+        public ISpecification<T> Or(ISpecification<T> specification)
         {
-            return new Specification<T>(Predicate.OrElse(specification.Predicate));
+            return Instanciate(Predicate.Or(specification.Predicate), InstanciateFetchStrategy(specification.FetchStrategy));
         }
 
-        public Specification<T> OrElse(Expression<Func<T, bool>> predicate)
+        public ISpecification<T> Or(Expression<Func<T, bool>> predicate)
         {
-            return new Specification<T>(Predicate.OrElse(predicate));
+            return Instanciate(Predicate.Or(predicate), FetchStrategy);
+        }
+
+        public ISpecification<T> OrElse(ISpecification<T> specification)
+        {
+            return Instanciate(Predicate.OrElse(specification.Predicate), InstanciateFetchStrategy(specification.FetchStrategy));
+        }
+
+        public ISpecification<T> OrElse(Expression<Func<T, bool>> predicate)
+        {
+            return Instanciate(Predicate.OrElse(predicate), FetchStrategy);
+        }
+
+        public static ISpecification<T> And(ISpecification<T> specification, ISpecification<T> specification2)
+        {
+            return new Specification<T>(specification.And(specification2));
+        }
+
+        public static ISpecification<T> And(Expression<Func<T, bool>> predicate, Expression<Func<T, bool>> predicate2)
+        {
+            return new Specification<T>(predicate.And(predicate2));
+        }
+
+        public static ISpecification<T> AndAlso(ISpecification<T> specification, ISpecification<T> specification2)
+        {
+            return new Specification<T>(specification.AndAlso(specification));
+        }
+
+        public static ISpecification<T> AndAlso(Expression<Func<T, bool>> predicate, Expression<Func<T, bool>> predicate2)
+        {
+            return new Specification<T>(predicate.AndAlso(predicate2));
+        }
+
+        public static ISpecification<T> Not(ISpecification<T> specification)
+        {
+            return new Specification<T>(specification.Not());
+        }
+
+        public static ISpecification<T> AndNot(ISpecification<T> specification, ISpecification<T> specification2)
+        {
+            return new Specification<T>(specification.AndNot(specification2));
+        }
+
+        public static ISpecification<T> AndNot(Expression<Func<T, bool>> predicate, Expression<Func<T, bool>> predicate2)
+        {
+            return new Specification<T>(predicate.AndNot(predicate2));
+        }
+
+        public static ISpecification<T> OrNot(ISpecification<T> specification, ISpecification<T> specification2)
+        {
+            return new Specification<T>(specification.OrNot(specification2));
+        }
+
+        public static ISpecification<T> OrNot(Expression<Func<T, bool>> predicate, Expression<Func<T, bool>> predicate2)
+        {
+            return new Specification<T>(predicate.OrNot(predicate2));
+        }
+
+        public static ISpecification<T> Or(ISpecification<T> specification, ISpecification<T> specification2)
+        {
+            return new Specification<T>(specification.Or(specification2));
+        }
+
+        public static ISpecification<T> Or(Expression<Func<T, bool>> predicate, Expression<Func<T, bool>> predicate2)
+        {
+            return new Specification<T>(predicate.Or(predicate2));
+        }
+
+        public static ISpecification<T> OrElse(ISpecification<T> specification, ISpecification<T> specification2)
+        {
+            return new Specification<T>(specification.OrElse(specification2));
+        }
+
+        public static ISpecification<T> OrElse(Expression<Func<T, bool>> predicate, Expression<Func<T, bool>> predicate2)
+        {
+            return new Specification<T>(predicate.OrElse(predicate2));
         }
 
         /// <summary>
@@ -123,11 +227,11 @@ namespace SharpRepository.Repository.Specifications
         /// <returns></returns>
         public override string ToString()
         {
-            return String.Format("Specification Type: {0}\nEntity Type: {1}\nPredicate: {2}\nFetchStrategy Type: {3}",
+            return String.Format("Specification Type: {0}\nEntity Type: {1}\nPredicate: {2}\nFetchStrategy: {3}",
                                  GetType().Name,
-                                 (typeof (T)).Name,
-                                 Predicate,
-                                 FetchStrategy.GetType().Name
+                                 (typeof(T)).Name,
+                                 HashGenerator.FromPredicate(Predicate),
+                                 FetchStrategy
                 );
         }
     }

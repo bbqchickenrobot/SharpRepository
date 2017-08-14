@@ -1,9 +1,10 @@
 ﻿using System;
-using System.Runtime.Caching;
 using Enyim.Caching;
 using Enyim.Caching.Configuration;
 using Enyim.Caching.Memcached;
 using SharpRepository.Repository.Caching;
+using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Options;
 
 namespace SharpRepository.Caching.Memcached
 {
@@ -13,46 +14,22 @@ namespace SharpRepository.Caching.Memcached
     public class MemcachedCachingProvider : ICachingProvider
     {
         protected MemcachedClient Client { get; set; }
-
+        
         /// <summary>
         /// Initializes a new instance of the <see cref="MemcachedCachingProvider"/> class with the default settings based on the configuration file default section.
         /// </summary>
-        public MemcachedCachingProvider()
+        public MemcachedCachingProvider(IMemcachedClientConfiguration configuration)
         {
-            Client = new MemcachedClient();
+            Client = new MemcachedClient(configuration);
         }
-
-        /// <summary>
-        /// Initializes a new instance of the <see cref="MemcachedCachingProvider"/> class from a specific configuration section settings
-        /// </summary>
-        /// <param name="configSectionName">Name of the configuration file section.</param>
-        public MemcachedCachingProvider(string configSectionName)
-        {
-            if (String.IsNullOrEmpty(configSectionName)) throw new ArgumentNullException("configSectionName");
-
-            Client = new MemcachedClient(configSectionName);
-        }
-
+        
         /// <summary>
         /// Initializes a new instance of the <see cref="MemcachedCachingProvider"/> class with an already instantiated <see cref="MemcachedClient"/>.
         /// </summary>
         /// <param name="memcachedClient">Instantiated client already configured</param>
         public MemcachedCachingProvider(MemcachedClient memcachedClient)
         {
-            if (memcachedClient == null) throw new ArgumentNullException("memcachedClient");
-
-            Client = memcachedClient;
-        }
-
-        /// <summary>
-        /// Initializes a new instance of the <see cref="MemcachedCachingProvider"/> class with a custom configuration provided.
-        /// </summary>
-        /// <param name="configuration">Memcached configuration object</param>
-        public MemcachedCachingProvider(IMemcachedClientConfiguration configuration)
-        {
-            if (configuration == null) throw new ArgumentNullException("configuration");
-
-            Client = new MemcachedClient(configuration);
+            Client = memcachedClient ?? throw new ArgumentNullException("memcachedClient");
         }
 
         /// <summary>
@@ -67,10 +44,11 @@ namespace SharpRepository.Caching.Memcached
         {
             if (String.IsNullOrEmpty(host)) throw new ArgumentNullException("host");
 
-            var config = new MemcachedClientConfiguration
-                             {
-                                 Protocol = MemcachedProtocol.Binary
-                             };
+
+            var config = new MemcachedClientConfiguration()
+            {
+                Protocol = MemcachedProtocol.Binary
+            };
             config.AddServer(host, port);
 
             if (!String.IsNullOrEmpty(username) || !String.IsNullOrEmpty(password))
@@ -92,7 +70,7 @@ namespace SharpRepository.Caching.Memcached
         /// <param name="key">Name of item</param>
         /// <param name="priority"></param>
         /// <param name="timeoutInSeconds">Seconds to cache</param>
-        public void Set<T>(string key, T value, CacheItemPriority priority = CacheItemPriority.Default, int? timeoutInSeconds = null)
+        public void Set<T>(string key, T value, CacheItemPriority priority = CacheItemPriority.Normal, int? timeoutInSeconds = null)
         {
             if (String.IsNullOrEmpty(key)) throw new ArgumentNullException("key");
 
@@ -160,7 +138,7 @@ namespace SharpRepository.Caching.Memcached
             return true;
         }
 
-        public int Increment(string key, int defaultValue, int value, CacheItemPriority priority = CacheItemPriority.Default)
+        public int Increment(string key, int defaultValue, int value, CacheItemPriority priority = CacheItemPriority.Normal)
         {
             if (String.IsNullOrEmpty(key)) throw new ArgumentNullException("key");
 

@@ -1,6 +1,7 @@
 ﻿using System;
 using SharpRepository.Repository.Caching;
 using Raven.Client.Document;
+using Raven.Client;
 
 namespace SharpRepository.RavenDbRepository
 {
@@ -9,7 +10,7 @@ namespace SharpRepository.RavenDbRepository
     /// </summary>
     /// <typeparam name="T">The type of object the repository acts on.</typeparam>
     /// <typeparam name="TKey">The type of the primary key.</typeparam>
-    public class RavenDbRepository<T, TKey> : RavenDbRepositoryBase<T, TKey> where T : class, new()
+    public class RavenDbRepository<T, TKey> : RavenDbRepositoryBase<T, TKey> where T : class
     {
         /// <summary>
         /// Initializes a new instance of the <see cref="RavenDbRepository&lt;T, TKey&gt;"/> class.
@@ -34,7 +35,7 @@ namespace SharpRepository.RavenDbRepository
         /// </summary>
         /// <param name="documentStore">The instantiated RavenDb Document Store.</param>
         /// <param name="cachingStrategy">The caching strategy.  Defaults to <see cref="NoCachingStrategy&lt;T, TKey&gt;" />.</param>
-        public RavenDbRepository(DocumentStore documentStore, ICachingStrategy<T, TKey> cachingStrategy = null) : base(documentStore, cachingStrategy) 
+        public RavenDbRepository(IDocumentStore documentStore, ICachingStrategy<T, TKey> cachingStrategy = null) : base(documentStore, cachingStrategy) 
         {
             if (documentStore == null) throw new ArgumentNullException("documentStore");
         }  
@@ -69,7 +70,7 @@ namespace SharpRepository.RavenDbRepository
         /// </summary>
         /// <param name="documentStore">The instantiated RavenDb Document Store.</param>
         /// <param name="cachingStrategy">The caching strategy.  Defaults to <see cref="NoCachingStrategy&lt;T&gt;" />.</param>
-        public RavenDbRepository(DocumentStore documentStore, ICachingStrategy<T, string> cachingStrategy = null) : base(documentStore, cachingStrategy)
+        public RavenDbRepository(IDocumentStore documentStore, ICachingStrategy<T, string> cachingStrategy = null) : base(documentStore, cachingStrategy)
         {
             if (documentStore == null) throw new ArgumentNullException("documentStore");
         }  

@@ -12,7 +12,8 @@ namespace SharpRepository.Repository
     public abstract class LinqRepositoryBase<T, TKey> : RepositoryBase<T, TKey> where T : class
     {
         protected LinqRepositoryBase(ICachingStrategy<T, TKey> cachingStrategy = null) : base(cachingStrategy)
-        {   
+        {
+            
         }
 
         public override IQueryable<T> AsQueryable()
@@ -20,16 +21,18 @@ namespace SharpRepository.Repository
             return BaseQuery();
         }
 
-        protected abstract IQueryable<T> BaseQuery(IFetchStrategy<T> fetchStrategy = null);
-
-        protected override T GetQuery(TKey key)
+        protected override T GetQuery(TKey key, IFetchStrategy<T> fetchStrategy)
         {
-            return FindQuery(ByPrimaryKeySpecification(key));
+            return FindQuery(ByPrimaryKeySpecification(key, fetchStrategy));
         }
 
         protected override T FindQuery(ISpecification<T> criteria)
         {
-            return criteria.SatisfyingEntityFrom(BaseQuery());
+            var query = BaseQuery(criteria.FetchStrategy);
+
+            SetTraceInfo("Find", query);
+
+            return criteria.SatisfyingEntityFrom(query);
         }
 
         protected override T FindQuery(ISpecification<T> criteria, IQueryOptions<T> queryOptions)
@@ -37,30 +40,44 @@ namespace SharpRepository.Repository
             if (queryOptions == null)
                 return FindQuery(criteria);
 
-            var query = queryOptions.Apply(BaseQuery());
+            var query = queryOptions.Apply(BaseQuery(criteria.FetchStrategy));
+
+            SetTraceInfo("Find", query);
 
             return criteria.SatisfyingEntityFrom(query);
         }
 
-        protected override IQueryable<T> GetAllQuery()
+        protected override IQueryable<T> GetAllQuery(IFetchStrategy<T> fetchStrategy)
         {
-            return BaseQuery();
+            var query = BaseQuery(fetchStrategy);
+
+            SetTraceInfo("GetAll", query);
+
+            return query;
         }
 
-        protected override IQueryable<T> GetAllQuery(IQueryOptions<T> queryOptions)
+        protected override IQueryable<T> GetAllQuery(IQueryOptions<T> queryOptions, IFetchStrategy<T> fetchStrategy)
         {
             if (queryOptions == null)
-                return GetAllQuery();
+                return GetAllQuery(fetchStrategy);
 
-            var query = BaseQuery();
+            var query = BaseQuery(fetchStrategy);
 
-            return queryOptions.Apply(query);
+            query = queryOptions.Apply(query);
+
+            SetTraceInfo("GetAll", query);
+
+            return query;
         }
 
         protected override IQueryable<T> FindAllQuery(ISpecification<T> criteria)
         {
             var query = BaseQuery(criteria.FetchStrategy);
-            return criteria.SatisfyingEntitiesFrom(query);
+            query = criteria.SatisfyingEntitiesFrom(query);
+
+            SetTraceInfo("FindAll", query);
+
+            return query;
         }
 
         protected override IQueryable<T> FindAllQuery(ISpecification<T> criteria, IQueryOptions<T> queryOptions)
@@ -72,14 +89,13 @@ namespace SharpRepository.Repository
             
             query = criteria.SatisfyingEntitiesFrom(query);
 
-            return queryOptions.Apply(query);
+            query = queryOptions.Apply(query);
+
+            SetTraceInfo("FindAll", query);
+
+            return query;
         }
 
-        public override IEnumerator<T> GetEnumerator()
-        {
-            return BaseQuery().GetEnumerator();
-		}
-		
         public override IRepositoryQueryable<TResult> Join<TJoinKey, TInner, TResult>(IRepositoryQueryable<TInner> innerRepository, Expression<Func<T, TJoinKey>> outerKeySelector, Expression<Func<TInner, TJoinKey>> innerKeySelector, Expression<Func<T, TInner, TResult>> resultSelector)
         {
             var innerQuery = innerRepository.AsQueryable();
@@ -87,6 +103,9 @@ namespace SharpRepository.Repository
 
             var innerType = innerRepository.GetType();
             var outerType = GetType();
+            var outerKeySelectorFunc = outerKeySelector.Compile();
+            var innerKeySelectorFunc = innerKeySelector.Compile();
+            var resultSelectorFunc = resultSelector.Compile();
 
             // if these are 2 different Repository types then let's bring down each query into memory so that they can be joined
             // if they are the same type then they will use the native IQueryable and take advantage of the back-end side join if possible
@@ -94,10 +113,11 @@ namespace SharpRepository.Repository
             {
                 innerQuery = innerQuery.ToList().AsQueryable();
                 outerQuery = outerQuery.ToList().AsQueryable();
-                return new CompositeRepository<TResult>(outerQuery.Join(innerQuery, outerKeySelector, innerKeySelector, resultSelector));
             }
 
-            return new CompositeRepository<TResult>(outerQuery.Join(innerQuery, outerKeySelector, innerKeySelector, resultSelector));
+            var query = outerQuery.Join(innerQuery, outerKeySelectorFunc, innerKeySelectorFunc, resultSelectorFunc).AsQueryable();
+            SetTraceInfo("Join", query);
+            return new CompositeRepository<TResult>(query);
         }
     }
 }

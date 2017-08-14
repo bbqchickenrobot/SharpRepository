@@ -1,6 +1,5 @@
-using MongoDB.Driver;
 using NUnit.Framework;
-using Rhino.Mocks;
+using Moq;
 
 namespace SharpRepository.Tests.Integration
 {
@@ -9,13 +8,11 @@ namespace SharpRepository.Tests.Integration
         [SetUp]
         public void Setup()
         {
-           
         }
 
         [TearDown]
         public void Teardown()
         {
-           
         }
 
         protected static T N<T>() where T : class
@@ -23,7 +20,7 @@ namespace SharpRepository.Tests.Integration
             return default(T);
         }
 
-        /// <summary>
+        // <summary>
         /// Create a mock
         /// </summary>
         /// <typeparam name="T">Type to be mocked</typeparam>
@@ -31,7 +28,8 @@ namespace SharpRepository.Tests.Integration
         /// <returns>T</returns>
         protected static T M<T>(params object[] argumentsForConstructor) where T : class
         {
-            return MockRepository.GenerateMock<T>(argumentsForConstructor);
+            var mock = new MockRepository(MockBehavior.Default).Create<T>(argumentsForConstructor);
+            return mock.Object;
         }
 
         /// <summary>
@@ -42,7 +40,7 @@ namespace SharpRepository.Tests.Integration
         /// <returns>T</returns>
         protected static T Pm<T>(params object[] argumentsForConstructor) where T : class
         {
-            return MockRepository.GeneratePartialMock<T>(argumentsForConstructor);
+            return M<T>(argumentsForConstructor);
         }
 
         /// <summary>
@@ -53,7 +51,7 @@ namespace SharpRepository.Tests.Integration
         /// <returns>T</returns>
         protected static T S<T>(params object[] argumentsForConstructor) where T : class
         {
-            return MockRepository.GenerateStub<T>(argumentsForConstructor);
+            return M<T>(argumentsForConstructor);
         }
 
         protected static class AssertIgnores
@@ -63,6 +61,5 @@ namespace SharpRepository.Tests.Integration
                 Assert.Ignore("MongoServer is NOT running. MongoDbRepository integration tests are excluded from the test suite until MongoDb installed on this machine. Get MongoDb installed and running on Windows: http://docs.mongodb.org/manual/tutorial/install-mongodb-on-windows/");
             }    
         }
-        
     }
 }

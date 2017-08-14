@@ -1,8 +1,9 @@
 ﻿using System;
 using NUnit.Framework;
+using SharpRepository.Repository;
 using SharpRepository.Repository.Transactions;
 using SharpRepository.Tests.TestObjects;
-using Should;
+using Shouldly;
 using System.Linq;
 using SharpRepository.InMemoryRepository;
 
@@ -18,7 +19,7 @@ namespace SharpRepository.Tests.Batch
             
             using (var batch = repository.BeginBatch())
             {
-                batch.BatchActions.Count.ShouldEqual(0);
+                batch.BatchActions.Count.ShouldBe(0);
             }
         }
         
@@ -31,7 +32,7 @@ namespace SharpRepository.Tests.Batch
             {
                 batch.Add(new Contact());
                 batch.Commit();
-                batch.BatchActions.Count.ShouldEqual(0);
+                batch.BatchActions.Count.ShouldBe(0);
             }
         }
 
@@ -44,8 +45,8 @@ namespace SharpRepository.Tests.Batch
             {
                 var contact = new Contact();
                 batch.Add(contact);
-                batch.BatchActions.First().Item.ShouldEqual(contact);
-                batch.BatchActions.First().Action.ShouldEqual(BatchAction.Add);
+                batch.BatchActions.FirstOrDefault().Item.ShouldBe(contact);
+                batch.BatchActions.FirstOrDefault().Action.ShouldBe(BatchAction.Add);
             }
         }
 
@@ -58,8 +59,8 @@ namespace SharpRepository.Tests.Batch
             {
                 var contact = new Contact();
                 batch.Update(contact);
-                batch.BatchActions.First().Item.ShouldEqual(contact);
-                batch.BatchActions.First().Action.ShouldEqual(BatchAction.Update);
+                batch.BatchActions.FirstOrDefault().Item.ShouldBe(contact);
+                batch.BatchActions.FirstOrDefault().Action.ShouldBe(BatchAction.Update);
             }
         }
 
@@ -72,8 +73,8 @@ namespace SharpRepository.Tests.Batch
             {
                 var contact = new Contact();
                 batch.Delete(contact);
-                batch.BatchActions.First().Item.ShouldEqual(contact);
-                batch.BatchActions.First().Action.ShouldEqual(BatchAction.Delete);
+                batch.BatchActions.FirstOrDefault().Item.ShouldBe(contact);
+                batch.BatchActions.FirstOrDefault().Action.ShouldBe(BatchAction.Delete);
             }
         }
 
@@ -86,7 +87,7 @@ namespace SharpRepository.Tests.Batch
             {
                 batch.Add(new Contact());
                 batch.Rollback();
-                batch.BatchActions.Count.ShouldEqual(0);
+                batch.BatchActions.Count.ShouldBe(0);
             }
         }
     }
